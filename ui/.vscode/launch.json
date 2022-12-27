@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Wails: Production gmp-ui",
+      "type": "go",
+      "request": "launch",
+      "mode": "exec",
+      "program": "${workspaceFolder}/build/bin/ui",
+      "preLaunchTask": "build",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Wails: Debug gmp-ui",
+      "type": "go",
+      "request": "launch",
+      "mode": "exec",
+      "program": "${workspaceFolder}/build/bin/ui",
+      "preLaunchTask": "build debug",
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "name": "Wails: Dev gmp-ui",
+      "type": "go",
+      "request": "launch",
+      "mode": "exec",
+      "program": "${workspaceFolder}/build/bin/ui",
+      "preLaunchTask": "build dev",
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}
