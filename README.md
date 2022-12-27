@@ -1,2 +1,2 @@
 # go-module-packager
-A Go Module packager for use in a air gapped environment.
+A Go Module packager for use in an air gapped environment.
