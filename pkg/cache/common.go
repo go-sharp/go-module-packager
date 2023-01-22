@@ -22,13 +22,15 @@ import (
 const pkgName = "cache"
 
 var (
-	ErrInvalidCacheDir = errors.New(pkgName + ": cache path must be a writeable directory")
+	errInvalidCacheDir      = errors.New(pkgName + ": cache path must be a writeable directory")
+	errIndexIndexingRunning = errors.New(pkgName + ": indexing is already running")
+	errInstanceClosed       = errors.New(pkgName + ": instance already closed")
 )
 
 func verifyCachePath(p string) (err error) {
 	var fi fs.FileInfo
 	if fi, err = os.Stat(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%w: %v", ErrInvalidCacheDir, err)
+		return fmt.Errorf("%w: %v", errInvalidCacheDir, err)
 	}
 
 	// Create directory because it does not exist yet
@@ -38,12 +40,12 @@ func verifyCachePath(p string) (err error) {
 		}
 
 		if fi, err = os.Stat(p); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidCacheDir, err)
+			return fmt.Errorf("%w: %v", errInvalidCacheDir, err)
 		}
 	}
 
 	if !fi.IsDir() {
-		return ErrInvalidCacheDir
+		return errInvalidCacheDir
 	}
 
 	var (
@@ -52,7 +54,7 @@ func verifyCachePath(p string) (err error) {
 	)
 
 	if f, err = os.OpenFile(fp, os.O_CREATE|os.O_WRONLY, 0600); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidCacheDir, err)
+		return fmt.Errorf("%w: %v", errInvalidCacheDir, err)
 	}
 	defer func() {
 		_ = f.Close()
@@ -142,4 +144,13 @@ func getModulFileAndVersion(path string) (version string, modF *modfile.File, ok
 
 func trimExt(path string) string {
 	return strings.TrimSuffix(path, filepath.Ext(path))
+}
+
+func isCtxDone(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
 }
