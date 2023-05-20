@@ -6,6 +6,8 @@ package cache
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
@@ -36,7 +38,23 @@ type ModEventListener chan<- ModEvent
 
 // NewModulManager creates a new ModulManager instance with given option parameters.
 func NewModulManager(options ...ModMgrOption) (m *ModulManager, err error) {
-	panic("not implemented yet")
+	var modPath []byte
+	if modPath, err = exec.Command("go", "env", "GOMODCACHE").Output(); err != nil {
+		return nil, fmt.Errorf("%v: %w", pkgName, err)
+	}
+
+	m = &ModulManager{
+		mux:        &sync.RWMutex{},
+		cachePath:  string(modPath),
+		cachedMods: map[string]map[ModInfo]struct{}{},
+		cacheCount: 0,
+		modCh:      make(chan ModEvent, 10),
+		listeners:  nil,
+	}
+
+	// TODO: Set up file watcher and start worker
+
+	return m, nil
 }
 
 // ModMgrOption configures the ModulManager instance.
@@ -65,9 +83,26 @@ type ModulManager struct {
 	modCh          chan ModEvent
 	listeners      []ModEventListener
 
-	doneCtx context.Context
+	doneCtx    context.Context
+	cancelFunc context.CancelFunc
 }
 
+// Close dispose this [ModulManager] instance and closes all registered listeners.
+func (m *ModulManager) Close() {
+	if m == nil || isCtxDone(m.doneCtx) {
+		return
+	}
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
+	for i := range m.listeners {
+		close(m.listeners[i])
+	}
+
+	m.cancelFunc()
+}
+
+// AddListeners adds a listener which will receive events from the cache.
 func (m *ModulManager) AddListeners(listeners ...ModEventListener) {
 	m.mux.Lock()
 	defer m.mux.Unlock()
@@ -125,6 +160,7 @@ func (m *ModulManager) ReIndex() (err error) {
 	return ctx.Err()
 }
 
+// AbortIndexing
 func (m *ModulManager) AbortIndexing() {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
@@ -181,6 +217,12 @@ LOOP:
 			m.mux.Unlock()
 		}
 	}
+
+	m.mux.Lock()
+	defer m.mux.Unlock()
+
+	m.cachedMods = map[string]map[ModInfo]struct{}{}
+	m.cacheCount = 0
 }
 
 func (m ModulManager) publishEvent(evt ModEvent) {
