@@ -16,10 +16,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-sharp/go-module-packager/pkg/log"
 	"golang.org/x/mod/modfile"
 )
 
-const pkgName = "cache"
+const pkgName = "pkg/cache"
+const logPrefix = "[" + pkgName + "]"
 
 var (
 	errInvalidCacheDir      = errors.New(pkgName + ": cache path must be a writeable directory")
@@ -69,12 +71,14 @@ func indexCache(ctx context.Context, path string, modCh chan<- ModEvent) {
 		ok   bool
 		modF *modfile.File
 	)
+	log.Info().Println(logPrefix, "indexing cache directory:", path)
 
 	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		// Check if processing should be terminated
 		select {
 		case <-ctx.Done():
-			return errors.New(pkgName + ": cache processing aborted")
+			log.Info().Println(logPrefix, "cache indexing aborted")
+			return errors.New(pkgName + ": cache indexing aborted")
 		default:
 		}
 
@@ -106,6 +110,8 @@ func indexCache(ctx context.Context, path string, modCh chan<- ModEvent) {
 
 		return nil
 	})
+
+	log.Info().Println(logPrefix, "indexing done for directory:", path)
 }
 
 func getModulFileAndVersion(path string) (version string, modF *modfile.File, ok bool) {

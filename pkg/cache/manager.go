@@ -7,11 +7,17 @@ package cache
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/go-sharp/go-module-packager/pkg/log"
 )
+
+const downladPath = "cache" + string(filepath.Separator) + "download"
 
 type EventType int
 
@@ -51,8 +57,51 @@ func NewModulManager(options ...ModMgrOption) (m *ModulManager, err error) {
 		modCh:      make(chan ModEvent, 10),
 		listeners:  nil,
 	}
+	m.doneCtx, m.cancelFunc = context.WithCancel(context.Background())
 
-	// TODO: Set up file watcher and start worker
+	// Setup file monitor
+	monitorPath := filepath.Join(m.cachePath, downladPath)
+	_ = os.MkdirAll(monitorPath, 0770)
+
+	if m.watcher, err = fsnotify.NewWatcher(); err != nil {
+		return nil, fmt.Errorf("%v: failed to create file watcher: %w", pkgName, err)
+	}
+
+	if err = m.watcher.Add(monitorPath); err != nil {
+		return nil, fmt.Errorf("%v: failed to monitor cache directory: %w", pkgName, err)
+	}
+
+	// Setup file manager worker loop
+	go func() {
+		log.Debug().Println(logPrefix, "starting file monitor")
+		defer func() { log.Debug().Println(logPrefix, "file monitor stopped") }()
+
+		for {
+			select {
+			case e := <-m.watcher.Events:
+				// Only interested in zip and module files
+				if !(strings.EqualFold(filepath.Ext(e.Name), ".mod") || strings.EqualFold(filepath.Ext(e.Name), ".zip")) {
+					continue
+				}   
+				// TODO: Implement event handling
+
+				if e.Has(fsnotify.Remove) {
+
+				}
+
+
+			case e := <-m.watcher.Errors:
+				log.Error().Println(logPrefix, "file monitor error:", e)
+			case <-m.doneCtx.Done():
+				return
+			}
+		}
+
+	}()
+
+	// Start worker and index process
+	go m.worker()
+	go m.ReIndex()
 
 	return m, nil
 }
@@ -78,7 +127,7 @@ type ModulManager struct {
 	cachedMods map[string]map[ModInfo]struct{}
 	cacheCount int
 
-	watcher        fsnotify.Watcher
+	watcher        *fsnotify.Watcher
 	cancelIndexing func()
 	modCh          chan ModEvent
 	listeners      []ModEventListener
@@ -94,6 +143,8 @@ func (m *ModulManager) Close() {
 	}
 	m.mux.Lock()
 	defer m.mux.Unlock()
+
+	_ = m.watcher.Close()
 
 	for i := range m.listeners {
 		close(m.listeners[i])
@@ -113,7 +164,7 @@ func (m *ModulManager) AddListeners(listeners ...ModEventListener) {
 func (m ModulManager) GetModuleInfos() (modInfos []ModInfo) {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
-
+	v ...any
 	modInfos = make([]ModInfo, 0, m.cacheCount)
 	for _, versions := range m.cachedMods {
 		for v := range versions {
@@ -182,6 +233,8 @@ func (m *ModulManager) worker() {
 		ok     bool
 		modMap map[ModInfo]struct{}
 	)
+	log.Debug().Println(logPrefix, "starting cache worker")
+	defer func() { log.Debug().Println(logPrefix, "cache worker stopped") }()
 
 LOOP:
 	for {
@@ -190,6 +243,7 @@ LOOP:
 			break LOOP
 		case evt := <-m.modCh:
 			m.mux.Lock()
+			log.Debug().Println(logPrefix, "received event", evt)
 			switch evt.Event {
 			case ModAddedEvent:
 				if modMap, ok = m.cachedMods[evt.Info.Name]; !ok {
@@ -226,6 +280,7 @@ LOOP:
 }
 
 func (m ModulManager) publishEvent(evt ModEvent) {
+	log.Debug().Println(logPrefix, "publishing event to listeners", evt)
 	for i := range m.listeners {
 		select {
 		case m.listeners[i] <- evt:
