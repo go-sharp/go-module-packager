@@ -82,14 +82,29 @@ func NewModulManager(options ...ModMgrOption) (m *ModulManager, err error) {
 				// Only interested in zip and module files
 				if !(strings.EqualFold(filepath.Ext(e.Name), ".mod") || strings.EqualFold(filepath.Ext(e.Name), ".zip")) {
 					continue
-				}   
-				// TODO: Implement event handling
+				}
+				log.Debug().Println(logPrefix, "cache files changed:", e)
 
-				if e.Has(fsnotify.Remove) {
-
+				var name, version string
+				var ok bool
+				if name, version, ok = getModuleNameAndVersion(e.Name, monitorPath); !ok {
+					log.Error().Println(logPrefix, "failed to get name and version")
+					continue
 				}
 
+				event := ModEvent{
+					Info: ModInfo{
+						Name:    name,
+						Version: version,
+					},
+					Event: ModAddedEvent,
+				}
 
+				if e.Has(fsnotify.Remove) {
+					event.Event = ModRemovedEvent
+				}
+
+				m.modCh <- event
 			case e := <-m.watcher.Errors:
 				log.Error().Println(logPrefix, "file monitor error:", e)
 			case <-m.doneCtx.Done():
@@ -164,7 +179,7 @@ func (m *ModulManager) AddListeners(listeners ...ModEventListener) {
 func (m ModulManager) GetModuleInfos() (modInfos []ModInfo) {
 	m.mux.RLock()
 	defer m.mux.RUnlock()
-	v ...any
+
 	modInfos = make([]ModInfo, 0, m.cacheCount)
 	for _, versions := range m.cachedMods {
 		for v := range versions {

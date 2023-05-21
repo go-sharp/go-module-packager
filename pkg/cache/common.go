@@ -114,6 +114,18 @@ func indexCache(ctx context.Context, path string, modCh chan<- ModEvent) {
 	log.Info().Println(logPrefix, "indexing done for directory:", path)
 }
 
+// getModuleNameAndVersion tries to get module name and version from path only.
+func getModuleNameAndVersion(path, base string) (version string, name string, ok bool) {
+	version = filepath.Base(strings.TrimSuffix(path, filepath.Ext(path)))
+
+	name = strings.TrimPrefix(filepath.Dir(filepath.Dir(path)), base)
+	if v := filepath.Base(filepath.Dir(path)); v != "@v" {
+		return "", "", false
+	}
+
+	return version, name, true
+}
+
 func getModulFileAndVersion(path string) (version string, modF *modfile.File, ok bool) {
 	fNameNoExt, ext := trimExt(path), filepath.Ext(path)
 	if fNameNoExt == "" || (ext != ".mod" && ext != ".zip") {
